@@ -6,6 +6,8 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "prepare": "husky",
+    "lint:staged": "lint-staged",
     "dev": "pnpm db:up && pnpm db:generate && pnpm db:deploy && turbo run dev",
     "dev:client": "pnpm --filter client dev",
     "dev:server": "pnpm db:up && pnpm db:generate && pnpm db:deploy && pnpm --filter server dev",
@@ -23,7 +25,12 @@
     "db:validate": "pnpm --filter server db:validate",
     "db:studio": "pnpm --filter server db:studio"
   },
+  "lint-staged": {
+    "*.{js,jsx,json,css,md,yml,yaml,html}": "prettier --check"
+  },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "prettier": "^3.9.9",
     "turbo": "2.11.7"
   }

@@ -21,6 +21,10 @@ Copy the environment sample only on first setup; preserve an existing `.env`.
 If using the provided Docker database from your host, its port is **5433**.
 The API reads `server/.env`; frontend Vite configuration belongs in `client/.env`.
 
+Run `./setup.sh` to create a root `.env` symlink pointing to `server/.env`.
+The script preserves existing files/links and requires `server/.env` to exist.
+Check its behavior with `node --test tests/setup.test.mjs`.
+
 `pnpm dev` starts PostgreSQL and waits for its health check, generates Prisma
 Client, applies committed migrations, and runs frontend/backend through Turbo.
 It never creates migrations or resets the database. If a setup step fails,
@@ -56,6 +60,14 @@ Do not use `down -v` unless you intentionally want to delete local database data
 | `pnpm db:studio`                     | Open Prisma Studio                                                |
 
 ## Team workflow
+
+Husky installs Git hooks through `pnpm install` (the root `prepare` script).
+Before each commit, lint-staged checks formatting on staged supported files,
+then Husky runs the configured workspace lint and build tasks. The first failure
+blocks the commit. Formatting checks do not rewrite files; fix reported formatting
+before retrying. Builds require the backend environment configuration and generate
+Prisma Client, but do not start Docker or apply migrations. Tests remain separate
+because the backend test script is currently a failing placeholder.
 
 Install dependencies from the root and commit **one root `pnpm-lock.yaml`**.
 Do not generate npm/yarn lockfiles or install separately inside each package.
