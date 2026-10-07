@@ -1,0 +1,37 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "stream",
+  "globalPassThroughEnv": ["NODE_ENV"],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "server#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "PORT",
+        "CORS_ORIGIN",
+        "JWT_*",
+        "REFRESH_TOKEN_*",
+        "BCRYPT_ROUNDS"
+      ]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": ["VITE_*"],
+      "outputs": ["dist/**"]
+    },
+    "server#build": {
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "lint": {},
+    "test": {
+      "cache": false
+    }
+  }
+}

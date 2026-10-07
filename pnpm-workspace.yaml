@@ -1,0 +1,11 @@
+packages:
+  - client
+  - server
+
+allowBuilds:
+  '@prisma/engines': true
+  bcrypt: true
+  prisma: true
+
+minimumReleaseAgeExclude:
+  - dotenv@18.0.6

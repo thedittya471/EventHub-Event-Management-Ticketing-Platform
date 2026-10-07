@@ -1,11 +1,7 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import { createServer } from 'node:http';
 import app from './app.js';
 import { connectDB } from './db.js';
-
-dotenv.config({
-  path: './.env',
-});
 
 const PORT = process.env.PORT || 8000;
 const server = createServer(app);

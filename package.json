@@ -1,0 +1,30 @@
+{
+  "name": "event-management",
+  "private": true,
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm db:up && pnpm db:generate && pnpm db:deploy && turbo run dev",
+    "dev:client": "pnpm --filter client dev",
+    "dev:server": "pnpm db:up && pnpm db:generate && pnpm db:deploy && pnpm --filter server dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "pnpm --filter server db:up",
+    "db:down": "pnpm --filter server db:down",
+    "db:logs": "pnpm --filter server db:logs",
+    "db:migrate": "pnpm --filter server db:migrate",
+    "db:deploy": "pnpm --filter server db:deploy",
+    "db:generate": "pnpm --filter server db:generate",
+    "db:validate": "pnpm --filter server db:validate",
+    "db:studio": "pnpm --filter server db:studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9",
+    "turbo": "2.11.7"
+  }
+}
