@@ -99,8 +99,10 @@ test(
         const retryBody = await retry.json();
 
         assert.equal(first.status, 201);
+        assert.equal(firstBody.created, true);
         assert.equal(firstBody.data.status, 'CONFIRMED');
         assert.equal(retry.status, 200);
+        assert.equal(retryBody.created, false);
         assert.equal(retryBody.data.id, firstBody.data.id);
         assert.equal(await activeCount(event.id), 1);
       }

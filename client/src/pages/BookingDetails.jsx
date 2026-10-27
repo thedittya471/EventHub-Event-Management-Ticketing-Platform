@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import { api } from '../lib/api.js';
 import {
   Alert,
@@ -20,11 +20,12 @@ import {
 
 function BookingDetails() {
   const { bookingId } = useParams();
+  const location = useLocation();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(location.state?.notice ?? null);
   const [busyAction, setBusyAction] = useState('');
   const [checkout, setCheckout] = useState(null);
   const [paymentVerified, setPaymentVerified] = useState(false);

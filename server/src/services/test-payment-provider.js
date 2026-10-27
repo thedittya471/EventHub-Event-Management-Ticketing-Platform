@@ -57,12 +57,6 @@ export function createTestCheckoutSession({
 
 export function getTestCheckoutSession(checkoutId) {
   assertTestMode();
-  const existing = sessions.get(checkoutId);
-
-  if (existing) {
-    return existing;
-  }
-
   if (!checkoutId.startsWith(CHECKOUT_ID_PREFIX)) {
     throw new HttpError(
       404,
@@ -71,22 +65,33 @@ export function getTestCheckoutSession(checkoutId) {
     );
   }
 
-  const session = {
-    id: checkoutId,
-    status: 'OPEN',
-    amountMinor: undefined,
-    currency: undefined,
-    testMode: true,
-  };
-  sessions.set(checkoutId, session);
-  return session;
+  return sessions.get(checkoutId) ?? null;
 }
 
 export function setTestCheckoutStatus(checkoutId, status) {
-  const session = getTestCheckoutSession(checkoutId);
-  const updated = { ...session, status: parseStatus(status) };
+  assertTestMode();
+  if (!checkoutId.startsWith(CHECKOUT_ID_PREFIX)) {
+    throw new HttpError(
+      404,
+      'CHECKOUT_NOT_FOUND',
+      'Checkout session not found.'
+    );
+  }
+
+  const session = sessions.get(checkoutId);
+  const updated = {
+    id: checkoutId,
+    status: parseStatus(status),
+    amountMinor: session?.amountMinor,
+    currency: session?.currency,
+    testMode: true,
+  };
   sessions.set(checkoutId, updated);
   return updated;
+}
+
+export function clearTestCheckoutSessions() {
+  sessions.clear();
 }
 
 export function verifyPaymentWebhookSignature(rawBody, signature) {

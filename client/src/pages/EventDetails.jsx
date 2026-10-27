@@ -1,7 +1,59 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { CalendarDays, MapPin, Ticket, Users, ArrowLeft } from 'lucide-react';
+import { useAuth } from '../auth/useAuth.js';
 import { api } from '../lib/api.js';
+
+function getBookingErrorMessage(error) {
+  if (error?.status === 401 || error?.code === 'UNAUTHENTICATED') {
+    return 'Your session has expired. Sign in again to continue booking.';
+  }
+
+  if (error?.status === 403 || error?.code === 'FORBIDDEN') {
+    return 'You do not have permission to book this event.';
+  }
+
+  if (error?.code === 'EVENT_SOLD_OUT') {
+    return 'This event is sold out.';
+  }
+
+  if (error?.code === 'REGISTRATION_CLOSED') {
+    return 'Registration for this event is closed.';
+  }
+
+  if (error?.code === 'EVENT_UNAVAILABLE') {
+    return 'This event is no longer available for booking.';
+  }
+
+  if (error?.code === 'PAYMENT_REQUIRED') {
+    return 'This event requires payment. Refresh the page and try again.';
+  }
+
+  if (error?.code === 'PAYMENT_NOT_REQUIRED') {
+    return 'This event no longer requires payment. Refresh the page and try again.';
+  }
+
+  if (error?.code === 'PAYMENT_HOLD_EXPIRED') {
+    return 'Your payment hold expired. Please try booking the event again.';
+  }
+
+  if (error?.code === 'BOOKING_NOT_PAYABLE') {
+    return 'This booking is no longer awaiting payment. View its booking details for the latest status.';
+  }
+
+  if (
+    error?.code === 'BOOKING_NOT_FOUND' ||
+    error?.code === 'PAYMENT_NOT_FOUND'
+  ) {
+    return 'We could not find this booking or its payment. Please try booking again.';
+  }
+
+  if (error?.status >= 500) {
+    return 'We could not complete your booking right now. Please try again.';
+  }
+
+  return 'We could not complete your booking. Please try again.';
+}
 
 function formatDate(value) {
   if (!value) return 'To be announced';
@@ -34,9 +86,17 @@ function formatPrice(event) {
 
 export default function EventDetails() {
   const { eventId } = useParams();
+  const { isAuthenticated, loading: authLoading, setUser } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingError, setBookingError] = useState('');
+  const [bookingRequiresSignIn, setBookingRequiresSignIn] = useState(false);
+  const bookingLock = useRef(false);
+  const eventUrl = `${location.pathname}${location.search}${location.hash}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +128,98 @@ export default function EventDetails() {
       cancelled = true;
     };
   }, [eventId]);
+
+  async function handleBooking() {
+    if (bookingLock.current || bookingLoading || authLoading) return;
+
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: eventUrl } });
+      return;
+    }
+
+    bookingLock.current = true;
+    setBookingLoading(true);
+    setBookingError('');
+    setBookingRequiresSignIn(false);
+
+    try {
+      if (Number(event.priceMinor ?? 0) > 0) {
+        const bookingResponse = await api(
+          `/events/${encodeURIComponent(eventId)}/bookings/paid`,
+          { method: 'POST' }
+        );
+        const booking = bookingResponse.data?.booking;
+        const alreadyBooked = bookingResponse.created === false;
+
+        if (!booking?.id) {
+          throw new Error('The booking response did not include a booking ID.');
+        }
+
+        if (booking.status !== 'PENDING_PAYMENT') {
+          navigate(`/bookings/${encodeURIComponent(booking.id)}`, {
+            state: alreadyBooked
+              ? { notice: 'You already have an active booking for this event.' }
+              : undefined,
+          });
+          return;
+        }
+
+        const checkoutResponse = await api(
+          `/bookings/${encodeURIComponent(booking.id)}/checkout`,
+          { method: 'POST' }
+        );
+        const checkoutId = checkoutResponse.data?.checkout?.id;
+
+        if (!checkoutId) {
+          throw new Error(
+            'The checkout response did not include a checkout ID.'
+          );
+        }
+
+        navigate(
+          `/checkout/test/${encodeURIComponent(checkoutId)}?bookingId=${encodeURIComponent(booking.id)}`,
+          {
+            state: alreadyBooked
+              ? {
+                  notice:
+                    'You already have an active booking. Continue its checkout below.',
+                }
+              : undefined,
+          }
+        );
+        return;
+      }
+
+      const bookingResponse = await api(
+        `/events/${encodeURIComponent(eventId)}/bookings`,
+        { method: 'POST' }
+      );
+      const booking = bookingResponse.data ?? bookingResponse.ticket;
+
+      if (!booking?.id) {
+        throw new Error('The booking response did not include a booking ID.');
+      }
+
+      navigate(`/bookings/${encodeURIComponent(booking.id)}`, {
+        state:
+          bookingResponse.created === false
+            ? { notice: 'You already have an active booking for this event.' }
+            : undefined,
+      });
+    } catch (requestError) {
+      if (
+        requestError?.status === 401 ||
+        requestError?.code === 'UNAUTHENTICATED'
+      ) {
+        setUser(null);
+        setBookingRequiresSignIn(true);
+      }
+      setBookingError(getBookingErrorMessage(requestError));
+    } finally {
+      bookingLock.current = false;
+      setBookingLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -104,6 +256,7 @@ export default function EventDetails() {
 
   const available = Number(event.availability);
   const hasAvailability = Number.isFinite(available) && available > 0;
+  const soldOut = Number.isFinite(available) && available <= 0;
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -228,20 +381,47 @@ export default function EventDetails() {
             </div>
 
             {hasAvailability ? (
-              <Link
-                to="/login"
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 font-semibold hover:bg-purple-500"
+              <button
+                type="button"
+                onClick={handleBooking}
+                disabled={bookingLoading || authLoading}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 font-semibold hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Continue to book <Ticket className="h-4 w-4" />
-              </Link>
+                {bookingLoading
+                  ? 'Processing booking...'
+                  : authLoading
+                    ? 'Checking sign-in...'
+                    : 'Continue to book'}{' '}
+                {!bookingLoading && <Ticket className="h-4 w-4" />}
+              </button>
             ) : (
               <button
                 type="button"
                 disabled
                 className="mt-6 w-full cursor-not-allowed rounded-xl bg-gray-800 px-4 py-3 font-semibold text-gray-500"
               >
-                Unavailable
+                {soldOut ? 'Sold out' : 'Unavailable'}
               </button>
+            )}
+
+            {soldOut && (
+              <p role="alert" className="mt-3 text-center text-sm text-red-300">
+                This event is sold out.
+              </p>
+            )}
+            {bookingError && (
+              <p role="alert" className="mt-3 text-sm leading-5 text-red-300">
+                {bookingError}{' '}
+                {bookingRequiresSignIn && (
+                  <Link
+                    className="font-semibold underline underline-offset-2"
+                    to="/login"
+                    state={{ from: eventUrl }}
+                  >
+                    Sign in
+                  </Link>
+                )}
+              </p>
             )}
 
             <p className="mt-3 text-center text-xs leading-5 text-gray-500">

@@ -5,6 +5,7 @@ import Signup from './pages/Signup.jsx';
 import BookingDetails from './pages/BookingDetails.jsx';
 import BookingTicket from './pages/BookingTicket.jsx';
 import CheckoutReturn from './pages/CheckoutReturn.jsx';
+import TestCheckout from './pages/TestCheckout.jsx';
 import MyBookings from './pages/MyBookings.jsx';
 import Profile from './pages/Profile.jsx';
 import RequireAuth from './auth/RequireAuth.jsx';
@@ -133,6 +134,14 @@ function App() {
         element={
           <RequireAuth>
             <BookingTicket />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/checkout/test/:checkoutId"
+        element={
+          <RequireAuth>
+            <TestCheckout />
           </RequireAuth>
         }
       />

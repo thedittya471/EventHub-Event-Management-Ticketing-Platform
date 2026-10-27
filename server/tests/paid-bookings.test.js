@@ -152,6 +152,7 @@ test(
         createdBookingIds.push(booking.id);
 
         assert.equal(response.status, 201);
+        assert.equal(body.created, true);
         assert.equal(booking.status, 'PENDING_PAYMENT');
         assert.equal(booking.amountMinor, event.priceMinor);
         assert.equal(booking.currency, event.currency);
@@ -191,6 +192,10 @@ test(
           responses.map((response) => response.status).sort(),
           [200, 201]
         );
+        assert.deepEqual(bodies.map((body) => body.created).sort(), [
+          false,
+          true,
+        ]);
         assert.equal(bookings[0].id, bookings[1].id);
         assert.equal(bodies[0].data.payment.id, bodies[1].data.payment.id);
         createdBookingIds.push(bookings[0].id);

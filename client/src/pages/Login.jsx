@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import AuthLayout, { PasswordVisibilityIcon } from './AuthLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../auth/useAuth.js';
@@ -16,6 +16,7 @@ function Login() {
   const [loading, setLoading] = useState(false);
 
   const { setUser } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -45,10 +46,14 @@ function Login() {
 
       setUser(response.data);
 
-      const next = params.get('next');
-      navigate(next?.startsWith('/') && !next.startsWith('//') ? next : '/', {
-        replace: true,
-      });
+      const destinations = [location.state?.from, params.get('next')];
+      const next = destinations.find(
+        (destination) =>
+          typeof destination === 'string' &&
+          destination.startsWith('/') &&
+          !destination.startsWith('//')
+      );
+      navigate(next || '/', { replace: true });
     } catch (error) {
       setErrors({
         password:

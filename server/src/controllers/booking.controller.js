@@ -9,6 +9,7 @@ import {
 import {
   createBookingCheckout,
   processPaymentWebhook,
+  processTestCheckoutOutcome,
   reconcileBookingPayment,
 } from '../services/payment.service.js';
 import { HttpError } from '../lib/errors.js';
@@ -31,6 +32,7 @@ export async function createBooking(req, res) {
     success: true,
     ticket: booking,
     data: booking,
+    created,
   });
 }
 
@@ -51,6 +53,7 @@ export async function createPaidBooking(req, res) {
 
   return res.status(created ? 201 : 200).json({
     data: { booking, payment },
+    created,
   });
 }
 
@@ -60,6 +63,15 @@ export async function createCheckout(req, res) {
 
   const checkout = await createBookingCheckout(bookingId, req.user.id);
   return res.status(200).json({ data: checkout });
+}
+
+export async function processTestCheckout(req, res) {
+  const result = await processTestCheckoutOutcome(
+    req.params.checkoutId,
+    req.user.id,
+    req.body?.status
+  );
+  return res.status(200).json({ data: result });
 }
 
 export async function reconcilePayment(req, res) {

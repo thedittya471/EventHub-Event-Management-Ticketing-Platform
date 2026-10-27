@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { HttpError } from '../lib/errors.js';
 import {
@@ -18,6 +19,9 @@ const checkoutPaymentSelect = {
   amountMinor: true,
   currency: true,
 };
+
+const testCheckoutIdPattern =
+  /^test_checkout_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function notFound() {
   throw new HttpError(404, 'BOOKING_NOT_FOUND', 'Booking not found.');
@@ -144,13 +148,15 @@ export async function createBookingCheckout(bookingId, userId) {
       );
     }
 
-    const session = currentBooking.payment.providerCheckoutId
-      ? getTestCheckoutSession(currentBooking.payment.providerCheckoutId)
-      : createTestCheckoutSession({
-          paymentId: currentBooking.payment.id,
-          amountMinor: currentBooking.payment.amountMinor,
-          currency: currentBooking.payment.currency,
-        });
+    const session =
+      (currentBooking.payment.providerCheckoutId
+        ? getTestCheckoutSession(currentBooking.payment.providerCheckoutId)
+        : null) ??
+      createTestCheckoutSession({
+        paymentId: currentBooking.payment.id,
+        amountMinor: currentBooking.payment.amountMinor,
+        currency: currentBooking.payment.currency,
+      });
 
     if (!currentBooking.payment.providerCheckoutId) {
       await tx.payment.update({
@@ -174,6 +180,78 @@ export async function createBookingCheckout(bookingId, userId) {
     paymentId: result.paymentId,
     checkout: serializeCheckout(result.session),
   };
+}
+
+export async function processTestCheckoutOutcome(checkoutId, userId, status) {
+  if (process.env.PAYMENT_PROVIDER_MODE !== 'test') {
+    throw new HttpError(
+      503,
+      'PAYMENT_PROVIDER_UNAVAILABLE',
+      'The test payment provider is unavailable.'
+    );
+  }
+
+  if (
+    typeof checkoutId !== 'string' ||
+    !testCheckoutIdPattern.test(checkoutId)
+  ) {
+    throw new HttpError(
+      404,
+      'CHECKOUT_NOT_FOUND',
+      'Checkout session not found.'
+    );
+  }
+
+  if (!['PAID', 'FAILED'].includes(status)) {
+    throw new HttpError(
+      400,
+      'INVALID_TEST_PAYMENT_STATUS',
+      'Test payment status must be PAID or FAILED.'
+    );
+  }
+
+  const secret = process.env.PAYMENT_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new HttpError(
+      503,
+      'PAYMENT_WEBHOOK_NOT_CONFIGURED',
+      'Payment webhooks are not configured.'
+    );
+  }
+
+  const payment = await prisma.payment.findFirst({
+    where: {
+      provider: 'razorpay',
+      providerCheckoutId: checkoutId,
+      booking: { userId },
+    },
+    select: { bookingId: true },
+  });
+
+  if (!payment) {
+    throw new HttpError(
+      404,
+      'CHECKOUT_NOT_FOUND',
+      'Checkout session not found.'
+    );
+  }
+
+  const payload = {
+    eventId: `test_${checkoutId}_${crypto.randomUUID()}`,
+    checkoutId,
+    status,
+    ...(status === 'PAID'
+      ? { providerPaymentId: `test_payment_${crypto.randomUUID()}` }
+      : {}),
+  };
+  const rawBody = Buffer.from(JSON.stringify(payload));
+  const signature = `sha256=${crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex')}`;
+  const result = await processPaymentWebhook(rawBody, signature);
+
+  return { ...result, bookingId: payment.bookingId };
 }
 
 async function findPaymentReference(where) {
@@ -413,8 +491,28 @@ export async function reconcileBookingPayment(bookingId, userId) {
     );
   }
 
-  const session = getTestCheckoutSession(payment.providerCheckoutId);
   const paymentReference = await findPaymentReference({ id: payment.id });
+  if (payment.status !== 'OPEN') {
+    const result = await updatePaymentFromProvider({
+      paymentReference,
+      providerStatus: payment.status === 'PAID' ? 'PAID' : 'FAILED',
+    });
+
+    return {
+      booking: result.booking,
+      payment: result.payment,
+    };
+  }
+
+  const session = getTestCheckoutSession(payment.providerCheckoutId);
+  if (!session) {
+    throw new HttpError(
+      503,
+      'CHECKOUT_SESSION_UNAVAILABLE',
+      'The test checkout session is unavailable. Resume checkout to restore the session before reconciling payment.'
+    );
+  }
+
   const result = await updatePaymentFromProvider({
     paymentReference,
     providerStatus: session.status,

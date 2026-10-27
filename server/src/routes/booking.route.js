@@ -8,6 +8,7 @@ import {
   getBookingTicket,
   listBookings,
   paymentWebhook,
+  processTestCheckout,
   reconcilePayment,
 } from '../controllers/booking.controller.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -22,6 +23,11 @@ router.get('/bookings/:bookingId', requireAuth, getBooking);
 router.get('/bookings/:bookingId/ticket', requireAuth, getBookingTicket);
 router.post('/bookings/:bookingId/cancel', requireAuth, cancelBooking);
 router.post('/bookings/:bookingId/checkout', requireAuth, createCheckout);
+router.post(
+  '/test-checkouts/:checkoutId/outcome',
+  requireAuth,
+  processTestCheckout
+);
 router.post('/bookings/:bookingId/reconcile', requireAuth, reconcilePayment);
 router.post('/events/:eventId/bookings', requireAuth, createBooking);
 router.post('/events/:eventId/bookings/paid', requireAuth, createPaidBooking);
