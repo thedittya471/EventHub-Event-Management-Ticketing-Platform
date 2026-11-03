@@ -677,6 +677,32 @@ test(
       assert.equal(otherResponse.status, 404);
     });
 
+    await t.test('rejects publishing a hidden draft event', async () => {
+      const event = await createEvent({
+        status: 'DRAFT',
+        hiddenAt: new Date(),
+      });
+
+      const response = await request(
+        `/api/organizer/events/${event.id}/publish`,
+        {
+          method: 'POST',
+        }
+      );
+
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.equal(body.error.code, 'EVENT_NOT_PUBLISHABLE');
+
+      const unchangedEvent = await prisma.event.findUnique({
+        where: { id: event.id },
+      });
+
+      assert.equal(unchangedEvent.status, 'DRAFT');
+      assert.ok(unchangedEvent.hiddenAt);
+    });
+
     await t.test(
       'locks price, capacity, and dates for published events with bookings',
       async () => {
