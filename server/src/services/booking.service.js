@@ -429,22 +429,40 @@ export async function getUserBooking(bookingId, userId) {
 export async function getUserBookingTicket(bookingId, userId) {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, userId },
-    select: { status: true, ticketCode: true },
+    select: {
+      id: true,
+      status: true,
+      ticketCode: true,
+      eventSnapshot: true,
+      user: {
+        select: {
+          name: true,
+        },
+      },
+    },
   });
 
   if (!booking) {
     throw new HttpError(404, 'BOOKING_NOT_FOUND', 'Booking not found.');
   }
 
-  if (booking.status !== 'CONFIRMED') {
+  if (booking.status !== 'CONFIRMED' || !booking.ticketCode) {
     throw new HttpError(
       409,
       'BOOKING_NOT_CONFIRMED',
-      'A ticket is available only for a confirmed booking.'
+      'A valid ticket is available only for a confirmed booking.'
     );
   }
 
-  return { ticketCode: booking.ticketCode };
+  return {
+    bookingId: booking.id,
+    status: booking.status,
+    ticketCode: booking.ticketCode,
+    attendee: {
+      name: booking.user.name,
+    },
+    event: booking.eventSnapshot,
+  };
 }
 
 export async function cancelUserBooking(bookingId, userId) {

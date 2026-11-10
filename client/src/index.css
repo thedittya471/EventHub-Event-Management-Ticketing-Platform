@@ -57,6 +57,8 @@ body {
     width: 100%;
     max-width: none !important;
     margin: 0 !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .print\:hidden {
