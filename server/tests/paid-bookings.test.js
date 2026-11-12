@@ -233,6 +233,54 @@ test(
     );
 
     await t.test(
+      'rejects paid booking after registration closes without creating records',
+      async () => {
+        const event = await createEvent({
+          registrationClosesAt: new Date(Date.now() - 1000),
+        });
+
+        const response = await reserve(event.id, attendee.id);
+        const body = await response.json();
+
+        assert.equal(response.status, 409);
+        assert.equal(body.error.code, 'REGISTRATION_CLOSED');
+        assert.equal(
+          await prisma.booking.count({ where: { eventId: event.id } }),
+          0
+        );
+        assert.equal(
+          await prisma.payment.count({
+            where: { booking: { eventId: event.id } },
+          }),
+          0
+        );
+      }
+    );
+
+    await t.test(
+      'rejects paid booking for a cancelled event without creating records',
+      async () => {
+        const event = await createEvent({ status: 'CANCELLED' });
+
+        const response = await reserve(event.id, attendee.id);
+        const body = await response.json();
+
+        assert.equal(response.status, 409);
+        assert.equal(body.error.code, 'EVENT_UNAVAILABLE');
+        assert.equal(
+          await prisma.booking.count({ where: { eventId: event.id } }),
+          0
+        );
+        assert.equal(
+          await prisma.payment.count({
+            where: { booking: { eventId: event.id } },
+          }),
+          0
+        );
+      }
+    );
+
+    await t.test(
       'counts unexpired pending bookings against capacity',
       async () => {
         const event = await createEvent({ capacity: 1 });

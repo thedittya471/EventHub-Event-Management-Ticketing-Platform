@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import AuthLayout, { PasswordVisibilityIcon } from './AuthLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../auth/useAuth.js';
+import { getSafeRedirectDestination } from '../auth/redirectUtils.js';
 
 const inputClassName =
   'h-12 w-full rounded-lg border border-[#3A3348] bg-[#14141B] px-4 text-sm text-white outline-none placeholder:text-[#71717A] focus-visible:border-[#8B5CF6]';
@@ -46,14 +47,10 @@ function Login() {
 
       setUser(response.data);
 
-      const destinations = [location.state?.from, params.get('next')];
-      const next = destinations.find(
-        (destination) =>
-          typeof destination === 'string' &&
-          destination.startsWith('/') &&
-          !destination.startsWith('//')
+      navigate(
+        getSafeRedirectDestination(location.state?.from, params.get('next')),
+        { replace: true }
       );
-      navigate(next || '/', { replace: true });
     } catch (error) {
       setErrors({
         password:

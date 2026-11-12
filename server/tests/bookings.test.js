@@ -127,8 +127,16 @@ test(
         book(event.id, attendee.id),
         book(event.id, secondAttendee.id),
       ]);
+      const bodies = await Promise.all(
+        responses.map((response) => response.json())
+      );
+      const rejectedIndex = responses.findIndex(
+        (response) => response.status === 409
+      );
 
       assert.deepEqual(responses.map((r) => r.status).sort(), [201, 409]);
+      assert.equal(responses[rejectedIndex].status, 409);
+      assert.equal(bodies[rejectedIndex].error.code, 'EVENT_SOLD_OUT');
       assert.equal(await activeCount(event.id), 1);
     });
 
@@ -155,6 +163,25 @@ test(
         assert.deepEqual(await codes('not-a-uuid'), [404, 'EVENT_UNAVAILABLE']);
       }
     );
+
+    await t.test('rejects free booking for a cancelled event', async () => {
+      const event = await createEvent({ status: 'CANCELLED' });
+      const response = await book(event.id, attendee.id);
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.equal(body.error.code, 'EVENT_UNAVAILABLE');
+      assert.equal(
+        await prisma.booking.count({ where: { eventId: event.id } }),
+        0
+      );
+      assert.equal(
+        await prisma.payment.count({
+          where: { booking: { eventId: event.id } },
+        }),
+        0
+      );
+    });
 
     await t.test('rejects anonymous users', async () => {
       const event = await createEvent();

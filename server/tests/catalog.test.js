@@ -3,6 +3,67 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 
+const PUBLIC_EVENT_FIELDS = [
+  'id',
+  'title',
+  'description',
+  'category',
+  'coverKey',
+  'venue',
+  'address',
+  'city',
+  'timezone',
+  'startAt',
+  'endAt',
+  'registrationClosesAt',
+  'capacity',
+  'priceMinor',
+  'currency',
+  'status',
+  'createdAt',
+  'organizer',
+  'availability',
+];
+const PRIVATE_EVENT_FIELDS = [
+  'organizerId',
+  'hiddenAt',
+  'passwordHash',
+  'email',
+  'role',
+  'ticketCode',
+  'payment',
+  'payments',
+  'providerPaymentId',
+];
+const PRIVATE_ORGANIZER_FIELDS = ['email', 'passwordHash', 'role', 'createdAt'];
+
+function assertPublicEvent(event) {
+  for (const field of PUBLIC_EVENT_FIELDS) {
+    assert.ok(
+      Object.hasOwn(event, field),
+      `expected public event field ${field}`
+    );
+  }
+  for (const field of PRIVATE_EVENT_FIELDS) {
+    assert.equal(
+      Object.hasOwn(event, field),
+      false,
+      `private event field ${field} must not be public`
+    );
+  }
+
+  assert.ok(event.organizer);
+  assert.equal(typeof event.organizer.id, 'string');
+  assert.equal(typeof event.organizer.name, 'string');
+  for (const field of PRIVATE_ORGANIZER_FIELDS) {
+    assert.equal(
+      Object.hasOwn(event.organizer, field),
+      false,
+      `private organizer field ${field} must not be public`
+    );
+  }
+}
+
 test(
   'public catalog includes the entire selected end date',
   {
@@ -110,6 +171,58 @@ test('public catalog rejects invalid date filters', async () => {
     (error) => error.status === 400 && error.code === 'INVALID_QUERY'
   );
 });
+
+test(
+  'public event listing exposes public fields without internal data',
+  {
+    skip:
+      !process.env.DATABASE_URL &&
+      'DATABASE_URL is required for integration tests.',
+  },
+  async (t) => {
+    const [{ listPublicEvents }, fixtures] = await Promise.all([
+      import('../src/services/event.service.js'),
+      createCatalogFixtures(t, 'Public Event Listing'),
+    ]);
+    const { createEvent } = fixtures;
+    const event = await createEvent({
+      title: `Public Event Listing ${randomUUID()}`,
+    });
+
+    const result = await listPublicEvents({
+      q: event.title,
+      limit: '12',
+      page: '1',
+    });
+    const publicEvent = result.data.find((item) => item.id === event.id);
+
+    assert.ok(publicEvent);
+    assertPublicEvent(publicEvent);
+  }
+);
+
+test(
+  'public event detail exposes public fields without internal data',
+  {
+    skip:
+      !process.env.DATABASE_URL &&
+      'DATABASE_URL is required for integration tests.',
+  },
+  async (t) => {
+    const [{ getPublicEvent }, fixtures] = await Promise.all([
+      import('../src/services/event.service.js'),
+      createCatalogFixtures(t, 'Public Event Detail'),
+    ]);
+    const { createEvent } = fixtures;
+    const event = await createEvent({
+      title: `Public Event Detail ${randomUUID()}`,
+    });
+
+    const publicEvent = await getPublicEvent(event.id);
+
+    assertPublicEvent(publicEvent);
+  }
+);
 
 async function createCatalogFixtures(t, name) {
   const { prisma } = await import('../src/db.js');

@@ -3,6 +3,11 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { CalendarDays, MapPin, Ticket, Users, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../auth/useAuth.js';
 import { api } from '../lib/api.js';
+import {
+  formatEventDateTime,
+  getBookingState,
+  isEventPaid,
+} from './eventDetailsUtils.js';
 
 function getBookingErrorMessage(error) {
   if (error?.status === 401 || error?.code === 'UNAUTHENTICATED') {
@@ -55,23 +60,15 @@ function getBookingErrorMessage(error) {
   return 'We could not complete your booking. Please try again.';
 }
 
-function formatDate(value) {
-  if (!value) return 'To be announced';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'To be announced';
-
-  return new Intl.DateTimeFormat('en-IN', {
-    dateStyle: 'full',
-    timeStyle: 'short',
-  }).format(date);
-}
-
 function formatPrice(event) {
-  const amount = Number(event.priceMinor ?? 0) / 100;
-  const currency = event.currency || 'INR';
+  if (!Number.isFinite(event.priceMinor) || event.priceMinor < 0) {
+    return 'Price unavailable';
+  }
 
-  if (amount === 0) return 'Free';
+  if (event.priceMinor === 0) return 'Free';
+
+  const amount = event.priceMinor / 100;
+  const currency = event.currency || 'INR';
 
   try {
     return new Intl.NumberFormat('en-IN', {
@@ -90,6 +87,7 @@ export default function EventDetails() {
   const location = useLocation();
   const navigate = useNavigate();
   const [event, setEvent] = useState(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -108,7 +106,10 @@ export default function EventDetails() {
 
       try {
         const result = await api(`/events/${encodeURIComponent(eventId)}`);
-        if (!cancelled) setEvent(result.data);
+        if (!cancelled) {
+          setCurrentTime(new Date());
+          setEvent(result.data);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(
@@ -128,6 +129,17 @@ export default function EventDetails() {
       cancelled = true;
     };
   }, [eventId]);
+
+  useEffect(() => {
+    if (!event) return undefined;
+
+    const intervalId = window.setInterval(
+      () => setCurrentTime(new Date()),
+      15_000
+    );
+
+    return () => window.clearInterval(intervalId);
+  }, [event]);
 
   async function handleBooking() {
     if (bookingLock.current || bookingLoading || authLoading) return;
@@ -255,8 +267,19 @@ export default function EventDetails() {
   }
 
   const available = Number(event.availability);
-  const hasAvailability = Number.isFinite(available) && available > 0;
-  const soldOut = Number.isFinite(available) && available <= 0;
+  const bookingState = getBookingState(event, currentTime);
+  const bookingStateLabel = {
+    available: 'Available',
+    sold_out: 'Sold out',
+    registration_closed: 'Registration closed',
+    cancelled: 'Event cancelled',
+    unavailable: 'Booking unavailable',
+  }[bookingState.status];
+  const bookingActionLabel = bookingState.canBook
+    ? Number(event.priceMinor ?? 0) > 0
+      ? 'Continue to payment'
+      : 'Book free ticket'
+    : bookingStateLabel;
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -315,7 +338,7 @@ export default function EventDetails() {
                 <div>
                   <p className="text-sm font-medium">Start</p>
                   <p className="mt-1 text-sm text-gray-400">
-                    {formatDate(event.startAt)}
+                    {formatEventDateTime(event.startAt, event.timezone)}
                   </p>
                 </div>
               </div>
@@ -326,11 +349,15 @@ export default function EventDetails() {
                   <div>
                     <p className="text-sm font-medium">End</p>
                     <p className="mt-1 text-sm text-gray-400">
-                      {formatDate(event.endAt)}
+                      {formatEventDateTime(event.endAt, event.timezone)}
                     </p>
                   </div>
                 </div>
               )}
+
+              <p className="text-xs text-gray-500">
+                Timezone: {event.timezone || 'Unavailable'}
+              </p>
 
               <div className="flex items-start gap-3">
                 <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-purple-400" />
@@ -375,12 +402,27 @@ export default function EventDetails() {
 
               <p className="mt-2 text-xs leading-5 text-gray-500">
                 {event.registrationClosesAt
-                  ? `Registration closes ${formatDate(event.registrationClosesAt)}`
+                  ? `Registration closes ${formatEventDateTime(event.registrationClosesAt, event.timezone)}`
                   : 'Check event details before booking.'}
               </p>
             </div>
 
-            {hasAvailability ? (
+            <p
+              aria-live="polite"
+              className="mt-4 text-sm font-medium text-gray-300"
+            >
+              Booking status: {bookingStateLabel}
+            </p>
+
+            {isEventPaid(event) && (
+              <p className="mt-4 rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-sm leading-6 text-purple-100">
+                Paid ticket cancellation and refunds are not supported in this
+                MVP. This is a simulated test payment. No real payment gateway
+                or charge is involved, and no real money is charged.
+              </p>
+            )}
+
+            {bookingState.canBook ? (
               <button
                 type="button"
                 onClick={handleBooking}
@@ -391,7 +433,7 @@ export default function EventDetails() {
                   ? 'Processing booking...'
                   : authLoading
                     ? 'Checking sign-in...'
-                    : 'Continue to book'}{' '}
+                    : bookingActionLabel}{' '}
                 {!bookingLoading && <Ticket className="h-4 w-4" />}
               </button>
             ) : (
@@ -400,11 +442,11 @@ export default function EventDetails() {
                 disabled
                 className="mt-6 w-full cursor-not-allowed rounded-xl bg-gray-800 px-4 py-3 font-semibold text-gray-500"
               >
-                {soldOut ? 'Sold out' : 'Unavailable'}
+                {bookingActionLabel}
               </button>
             )}
 
-            {soldOut && (
+            {bookingState.status === 'sold_out' && (
               <p role="alert" className="mt-3 text-center text-sm text-red-300">
                 This event is sold out.
               </p>
