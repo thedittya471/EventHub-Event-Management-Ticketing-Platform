@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, CalendarDays, Save } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { saveOrganizerEvent } from '../lib/organizerEventWorkflow.js';
 
 const initialForm = {
   title: '',
@@ -96,10 +97,12 @@ function OrganizerEventForm() {
   const navigate = useNavigate();
   const editing = Boolean(eventId);
   const originalDates = useRef({});
+  const submitLock = useRef(false);
 
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(editing);
   const [saving, setSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState('');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [notice, setNotice] = useState('');
@@ -259,6 +262,10 @@ function OrganizerEventForm() {
 
   async function handleSubmit(event, publish = false) {
     event.preventDefault();
+
+    // Prevent multiple submissions before React re-renders.
+    if (submitLock.current) return;
+
     setError('');
     setNotice('');
 
@@ -271,44 +278,29 @@ function OrganizerEventForm() {
       return;
     }
 
+    submitLock.current = true;
     setSaving(true);
+    setSavingAction(publish ? 'publish' : 'save');
 
     try {
       const payload = toPayload(form, originalDates.current);
-      let savedEvent;
 
-      if (editing) {
-        const result = await api(`/organizer/events/${eventId}`, {
-          method: 'PATCH',
-          body: payload,
-        });
-        savedEvent = result.data;
-      } else {
-        const result = await api('/organizer/events', {
-          method: 'POST',
-          body: payload,
-        });
-        savedEvent = result.data;
-      }
-
-      if (publish) {
-        await api(`/organizer/events/${savedEvent.id}/publish`, {
-          method: 'POST',
-        });
-      }
-
-      navigate(`/organizer/events/${savedEvent.id}`, {
-        replace: true,
-        state: {
-          notice: publish
-            ? 'Event published successfully.'
-            : editing
-              ? 'Event changes saved.'
-              : 'Draft created successfully.',
-        },
+      await saveOrganizerEvent({
+        api,
+        payload,
+        eventId,
+        publish,
+        navigate,
       });
     } catch (err) {
-      setError(err.message || 'Unable to save this event.');
+      if (err.workflowStage === 'publish') {
+        setError(
+          `Your event was saved, but publishing failed. Your changes are preserved. Please retry publishing. ${err.message || ''}`
+        );
+      } else {
+        setError(err.message || 'Unable to save this event. Please try again.');
+      }
+
       const serverErrors = err.fields ?? {};
 
       setFieldErrors({
@@ -316,7 +308,9 @@ function OrganizerEventForm() {
         ...(serverErrors.priceMinor ? { price: serverErrors.priceMinor } : {}),
       });
     } finally {
+      submitLock.current = false;
       setSaving(false);
+      setSavingAction('');
     }
   }
 
@@ -590,7 +584,7 @@ function OrganizerEventForm() {
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-purple-400/40 px-5 py-3 text-sm font-semibold hover:bg-purple-500/10 disabled:opacity-50"
             >
               <Save size={17} />
-              {saving ? 'Saving...' : 'Save draft'}
+              {saving && savingAction === 'save' ? 'Saving...' : 'Save draft'}
             </button>
 
             <button
@@ -599,7 +593,9 @@ function OrganizerEventForm() {
               onClick={(event) => handleSubmit(event, true)}
               className="rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold hover:bg-purple-500 disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save and publish'}
+              {saving && savingAction === 'publish'
+                ? 'Publishing...'
+                : 'Save and publish'}
             </button>
           </div>
         </form>
