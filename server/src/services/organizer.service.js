@@ -371,6 +371,14 @@ export async function publishOrganizerEvent(eventId, organizerId) {
     );
   }
 
+  if (event.hiddenAt) {
+    throw new HttpError(
+      409,
+      'EVENT_NOT_PUBLISHABLE',
+      'Hidden events cannot be published.'
+    );
+  }
+
   const errors = {};
   const now = new Date();
 
